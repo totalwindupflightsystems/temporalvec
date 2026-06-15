@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Temporal Encoding Problem — An Interactive Explainer</title>
+<style>
+  :root {
+    --bg: #0a0a14;
+    --surface: #12122a;
+    --surface2: #1a1a35;
+    --text: #c8ccd8;
+    --muted: #7a7d8a;
+    --accent: #4a90d9;
+    --gold: #ccaa55;
+    --red: #e55;
+    --green: #5a5;
+    --border: #1e1e3a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    line-height: 1.6;
+  }
+  h1 { font-size: 1.8rem; color: var(--gold); margin-bottom: 0.3rem; }
+  h2 { font-size: 1.2rem; color: var(--accent); margin: 2.5rem 0 0.8rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1rem; color: var(--text); margin: 1.5rem 0 0.5rem; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.4rem;
+    margin: 1rem 0;
+  }
+  .section.good { border-color: rgba(90,200,90,0.3); background: rgba(0,60,0,0.15); }
+  .section.bad { border-color: rgba(230,80,80,0.3); background: rgba(60,0,0,0.15); }
+  .section.warn { border-color: rgba(200,180,60,0.3); background: rgba(60,50,0,0.1); }
+
+  .formula {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+    margin: 0.5rem 0;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.85rem;
+    overflow-x: auto;
+  }
+  .formula .highlight { color: var(--accent); }
+  .formula .error { color: var(--red); }
+  .formula .good { color: var(--green); }
+  .formula .gold { color: var(--gold); }
+
+  .insight {
+    background: rgba(74,144,217,0.1);
+    border-left: 3px solid var(--accent);
+    padding: 0.6rem 1rem;
+    margin: 0.8rem 0;
+    font-size: 0.88rem;
+  }
+  .verdict {
+    background: rgba(204,170,85,0.12);
+    border: 1px solid rgba(204,170,85,0.3);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 1.2rem 0;
+  }
+  .verdict strong { color: var(--gold); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.8rem 0;
+    font-size: 0.82rem;
+  }
+  th {
+    text-align: left;
+    padding: 0.4rem 0.7rem;
+    background: var(--surface2);
+    color: var(--gold);
+    font-weight: 500;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td { padding: 0.35rem 0.7rem; border-bottom: 1px solid var(--border); }
+  td.bad-cell { color: var(--red); }
+  td.good-cell { color: var(--green); }
+
+  /* Interactive slider */
+  .slider-group { margin: 1rem 0; }
+  .slider-group label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.2rem; }
+  .slider-group input[type=range] { width: 100%; margin: 0.2rem 0; }
+  .slider-value { display: inline-block; min-width: 3.5rem; text-align: right; color: var(--accent); font-weight: 600; font-size: 0.85rem; }
+
+  canvas { display: block; margin: 0.8rem 0; border-radius: 6px; background: var(--surface2); border: 1px solid var(--border); }
+
+  .step { margin: 2rem 0; }
+  .step-num {
+    display: inline-block;
+    width: 26px; height: 26px;
+    line-height: 26px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 700;
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+  }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 1.5rem 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .flow-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.78rem;
+    text-align: center;
+  }
+  .flow-box.wrong { border-color: var(--red); }
+  .flow-box.right { border-color: var(--green); }
+  .flow-arrow { color: var(--muted); font-size: 1.2rem; }
+  .flow-label { font-size: 0.65rem; color: var(--red); text-align: center; margin-top: 0.3rem; }
+</style>
+</head>
+<body>
+
+<h1>The Temporal Encoding Problem</h1>
+<p class="subtitle">Why the log-decay penalty is wrong, what double-counting means, and how to fix it — visually.</p>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- STEP 1: The Two Systems -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<h2><span class="step-num">1</span> We Have Two Systems Fighting Each Other</h2>
+
+<p>Our vector search has <strong>two</strong> mechanisms that both try to control time. They work in completely different ways and they step on each other.</p>
+
+<div class="flow">
+  <div class="flow-box right">
+    <strong>Circular Encoding</strong><br>
+    <span style="font-size:0.7rem;color:var(--muted)">Time INSIDE the vector</span>
+  </div>
+  <span class="flow-arrow">→</span>
+  <div class="flow-box">
+    ANN Search<br>
+    <span style="font-size:0.7rem;color:var(--muted)">finds neighbors</span>
+  </div>
+  <span class="flow-arrow">→</span>
+  <div class="flow-box right">
+    Result 1<br>
+    <span style="font-size:0.7rem;color:var(--green)">score already<br>includes time</span>
+  </div>
+</div>
+
+<div class="flow">
+  <div class="flow-box wrong">
+    <strong>Hybrid Re-rank</strong><br>
+    <span style="font-size:0.7rem;color:var(--muted)">Log penalty ON TOP</span>
+  </div>
+  <span class="flow-arrow">→</span>
+  <div class="flow-box wrong">
+    Subtracts MORE<br>
+    <span style="font-size:0.7rem;color:var(--red)">penalizes time again</span>
+  </div>
+  <span class="flow-arrow">→</span>
+  <div class="flow-box wrong">
+    ❌ Double penalty<br>
+    <span style="font-size:0.7rem;color:var(--red)">time counted twice</span>
+  </div>
+</div>
+
+<div class="insight">
+  <strong>This is double-counting.</strong> The circular encoding already adds a time bonus/penalty through cos(λπ·Δt). Then hybrid subtracts MORE through log(1+Δt). Two mechanisms, one variable, both pushing the same direction. You can't tune them independently.
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- STEP 2: The Math Side by Side -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<h2><span class="step-num">2</span> The Math, Side by Side</h2>
+
+<div class="section good">
+  <h3>Circular Encoding (the good one)</h3>
+  <div class="formula">
+    score = <span class="highlight">γ·sem_sim</span> + <span class="good">Σᵢ γᵢ·cos(λᵢπ·Δt)</span>
+  </div>
+  <p style="font-size:0.82rem;color:var(--muted);margin-top:0.4rem;">
+    γ + Σγᵢ = 1 → it's a <strong>convex combination</strong>. Score is always bounded in [-1, 1].<br>
+    Time decays SMOOTHLY: cos starts at 1, glides down to 0 at Δt=0.5/λ, bottoms at -1.<br>
+    Controllable: smaller λ = slower decay. λ=0.1 means the first zero-crossing is at 5 time units.
+  </p>
+</div>
+
+<div class="section bad">
+  <h3>Hybrid Re-rank with Log (the broken one)</h3>
+  <div class="formula">
+    score = γ·sem_sim + Σᵢ γᵢ·cos(λᵢπ·Δt) <span class="error">− α·log(1 + Δt)</span>
+  </div>
+  <p style="font-size:0.82rem;color:var(--muted);margin-top:0.4rem;">
+    Three things wrong with the <span class="error">red part</span>:<br>
+    <strong>① Unbounded:</strong> as Δt → ∞, penalty → ∞, score → <span class="error">negative infinity</span>. A 100-year-old document with perfect semantic match gets -∞ score.<br>
+    <strong>② Wrong slope:</strong> penalty grows fastest in 0–60s range (where real conversations live), then goes flat everywhere else.<br>
+    <strong>③ Duplicate:</strong> cos(λπ·Δt) <em>already</em> handles time. The penalty hits the same thing twice.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- INTERACTIVE GRAPH 1: log vs cos -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<h2><span class="step-num">3</span> See the Problem: Log vs Cos</h2>
+<p style="font-size:0.82rem;color:var(--muted);">Move the slider to see how log penalty and cosine behave across time distances. Watch what happens when Δt crosses 100 — log keeps climbing. Cosine stays bounded.</p>
+
+<div class="section">
+  <div class="slider-group">
+    <label>Max time to display: <span id="time-label" class="slider-value">100</span> seconds</label>
+    <input type="range" id="time-slider" min="10" max="1000" value="100" step="10">
+  </div>
+  <canvas id="log-vs-cos" width="780" height="320"></canvas>
+  <p style="font-size:0.72rem;color:var(--muted);margin-top:0.3rem;">
+    <span style="color:var(--red);">■ Log penalty</span> — climbs forever, steepest where conversations live.<br>
+    <span style="color:var(--gold);">■ Cosine</span> — smooth, bounded, oscillates gently. Controllable with λ.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- INTERACTIVE GRAPH 2: the alternatives -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<h2><span class="step-num">4</span> The FIX: Exponential Saturation</h2>
+<p style="font-size:0.82rem;color:var(--muted);">If we absolutely must have a penalty, use this. Move the λ slider to see how the knee shifts.</p>
+
+<div class="section">
+  <div class="formula">
+    penalty = α · <span class="good">(1 − e<sup>−λ·Δt</sup>)</span>
+  </div>
+  <p style="font-size:0.8rem;color:var(--muted);margin:0.3rem 0;">
+    Bounded at α. Smooth everywhere. λ controls where it saturates.
+  </p>
+  <div class="slider-group">
+    <label>λ (saturation speed): <span id="lambda-label" class="slider-value">0.02</span></label>
+    <input type="range" id="lambda-slider" min="0.002" max="0.2" value="0.02" step="0.002">
+  </div>
+  <div class="slider-group">
+    <label>α (max penalty): <span id="alpha-label" class="slider-value">0.3</span></label>
+    <input type="range" id="alpha-slider" min="0.05" max="1.0" value="0.3" step="0.05">
+  </div>
+  <canvas id="exp-vs-others" width="780" height="300"></canvas>
+  <p style="font-size:0.72rem;color:var(--muted);margin-top:0.3rem;">
+    <span style="color:var(--red);">■ Log (broken)</span> — unbounded, wrong slope<br>
+    <span style="color:#5af;">■ Exponential</span> — bounded, smooth, single knob (λ)<br>
+    <span style="color:#fa5;">■ Hyperbolic</span> — heavier tail, saturates slower<br>
+    <span style="color:#5f5;">■ Tanh</span> — sharpest knee, fastest saturation
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- STEP 5: The Echo Mistake -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<h2><span class="step-num">5</span> The "Echo Problem" Was Wrong From the Start</h2>
+
+<p>The hybrid re-rank was invented to fix "cosine echoes at λ &gt; 2." But this claim has two problems:</p>
+
+<div class="section warn">
+  <h3>Problem 1: Echoes exist at EVERY λ — not just &gt; 2</h3>
+  <p>Cosine is periodic. The period is <strong>2/λ</strong>. λ=1 echoes at Δt=2. λ=0.1 echoes at Δt=20. λ=5 echoes at Δt=0.4. There's nothing special about λ=2. The echo distance just gets shorter as λ increases.</p>
+  <div class="formula" style="text-align:center;">
+    cos(λπ·Δt) = 1 → Δt = <span class="highlight">0, 2/λ, 4/λ, 6/λ, ...</span><br>
+    cos(λπ·Δt) = 0 → Δt = <span class="highlight">0.5/λ, 1.5/λ, 2.5/λ, ...</span><br>
+    cos(λπ·Δt) = −1 → Δt = <span class="highlight">1/λ, 3/λ, 5/λ, ...</span>
+  </div>
+  <p style="font-size:0.82rem;margin-top:0.5rem;">The fix isn't a penalty function. The fix is <strong>picking the right λ.</strong> If your conversations span at most 100 time units, use λ ≤ 0.02 so the first echo is at Δt = 100 — safely beyond your range.</p>
+</div>
+
+<div class="section bad">
+  <h3>Problem 2: The penalty doesn't fix the echo ANYWAY</h3>
+  <p>The log penalty shifts everything down by α·log(1+Δt). But the cosine still oscillates on top of it.</p>
+  <div class="formula">
+    score = γ·sem_sim + Σᵢ γᵢ·<span class="highlight">cos(λᵢπ·Δt)</span> − α·log(1+Δt)
+  </div>
+  <p style="font-size:0.82rem;margin-top:0.4rem;">At Δt = 2k/λ, the cosine term returns to +1 — the score gets a bump of +2γᵢ relative to the trough. The echo is still there, just riding on a lower baseline. <strong>Subtraction doesn't cancel oscillation.</strong></p>
+</div>
+
+<canvas id="echo-graph" width="780" height="280"></canvas>
+<p style="font-size:0.72rem;color:var(--muted);margin-top:0.3rem;">
+  <span style="color:var(--gold);">■ Circular only</span> — cosine oscillates, bounded<br>
+  <span style="color:var(--red);">■ With log penalty</span> — shifted down, still oscillating. <strong>Echo NOT fixed.</strong>
+</p>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- STEP 6: The Real Fix -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<h2><span class="step-num">6</span> The Real Fix: Use Circular Encoding Alone</h2>
+
+<div class="section good">
+  <h3>The clean system</h3>
+  <div class="formula">
+    score = <span class="highlight">γ·sem_sim</span> + <span class="good">Σᵢ γᵢ·cos(λᵢπ·Δt)</span>
+  </div>
+  <p style="font-size:0.82rem;margin-top:0.5rem;">
+    That's it. <strong>One mechanism for time.</strong> No double-counting. No unbounded penalty. No fighting frameworks.
+  </p>
+</div>
+
+<table>
+  <tr><th>What</th><th>Hybrid + Log</th><th>Circular Only</th></tr>
+  <tr><td>Score range</td><td class="bad-cell">(−∞, 1]</td><td class="good-cell">[−1, 1]</td></tr>
+  <tr><td>Time counted</td><td class="bad-cell">Twice (cos + log)</td><td class="good-cell">Once (cos only)</td></tr>
+  <tr><td>Smoothness</td><td class="bad-cell">Log is C∞ but wrong slope</td><td class="good-cell">C∞, bounded, tunable via λ</td></tr>
+  <tr><td>Tunability</td><td class="bad-cell">Two interacting knobs</td><td class="good-cell">One knob per scale (β, λ)</td></tr>
+  <tr><td>Math elegance</td><td class="bad-cell">Additive + subtractive mixed</td><td class="good-cell">Pure convex combination γ+Σγᵢ=1</td></tr>
+</table>
+
+<div class="verdict">
+  <strong>Verdict:</strong> Circular encoding alone is the answer. It's bounded, tunable, mathematically exact, and doesn't need a second penalty mechanism.<br><br>
+  If you <em>absolutely must</em> have monotonic decay (no oscillations at all), use exponential saturation: <code>α·(1 − e<sup>−λ·Δt</sup>)</code> — but only if circular encoding's cosine doesn't meet your needs.
+</div>
+
+<p style="font-size:0.72rem;color:var(--muted);margin-top:3rem;">
+  Full 423-line peer review: ~/Kobayashi-Maru/docs/design-review/temporal-encoding-penalty-review.md
+</p>
+
+<script>
+// ═══════════════════════════════════════════════════
+// GRAPH 1: log vs cos
+// ═══════════════════════════════════════════════════
+const ctx1 = document.getElementById('log-vs-cos').getContext('2d');
+const slider = document.getElementById('time-slider');
+const timeLabel = document.getElementById('time-label');
+let maxT = 100;
+
+function drawLogVsCos() {
+  const w = 780, h = 320;
+  ctx1.clearRect(0, 0, w, h);
+
+  // Grid
+  ctx1.strokeStyle = '#1e1e3a';
+  ctx1.lineWidth = 0.5;
+  for (let i = 0; i <= 10; i++) {
+    const x = 60 + (w - 100) * i / 10;
+    ctx1.beginPath(); ctx1.moveTo(x, 30); ctx1.lineTo(x, h - 50); ctx1.stroke();
+    ctx1.fillStyle = '#4a4a6a';
+    ctx1.font = '10px Inter, sans-serif';
+    ctx1.fillText((maxT * i / 10).toFixed(0) + 's', x - 12, 22);
+  }
+  for (let i = 0; i <= 10; i++) {
+    const y = 30 + (h - 80) * i / 10;
+    ctx1.beginPath(); ctx1.moveTo(60, y); ctx1.lineTo(w - 40, y); ctx1.stroke();
+    ctx1.fillStyle = '#4a4a6a';
+    ctx1.font = '10px Inter, sans-serif';
+    ctx1.fillText((1 - i / 10).toFixed(1), 30, y + 4);
+  }
+
+  // Axes
+  ctx1.strokeStyle = '#5a5a7a';
+  ctx1.lineWidth = 1;
+  ctx1.beginPath(); ctx1.moveTo(60, 30); ctx1.lineTo(60, h - 50); ctx1.stroke();
+  ctx1.beginPath(); ctx1.moveTo(60, h - 50); ctx1.lineTo(w - 40, h - 50); ctx1.stroke();
+
+  // Log penalty: α·log(1+t) scaled
+  ctx1.beginPath();
+  ctx1.strokeStyle = '#e55';
+  ctx1.lineWidth = 2.5;
+  const logScaling = 0.15; // scales log output into [0,1] visual range
+  let first = true;
+  for (let px = 0; px <= w - 100; px++) {
+    const t = maxT * px / (w - 100);
+    const logVal = Math.log(1 + t);
+    const y = h - 50 - (logVal * (h - 80) * logScaling);
+    if (first) { ctx1.moveTo(60 + px, y); first = false; }
+    else ctx1.lineTo(60 + px, y);
+  }
+  ctx1.stroke();
+
+  // Label
+  ctx1.fillStyle = '#e55';
+  ctx1.font = '12px Inter, sans-serif';
+  ctx1.fillText('Log penalty (unbounded)', 60 + (w-100)*0.65, 50);
+
+  // Cosine: 1 - cos(λπ·Δt) scaled to penalty (inverted)
+  const lam = 0.05;
+  ctx1.beginPath();
+  ctx1.strokeStyle = '#ccaa55';
+  ctx1.lineWidth = 2.5;
+  first = true;
+  for (let px = 0; px <= w - 100; px++) {
+    const t = maxT * px / (w - 100);
+    // Show 1-cos as the temporal component (0 at t=0, climbs to 2 at max opposite phase)
+    const cosVal = (1 - Math.cos(lam * Math.PI * t)) / 2; // normalize to [0,1]
+    const y = h - 50 - (cosVal * (h - 80) * 0.5);
+    if (first) { ctx1.moveTo(60 + px, y); first = false; }
+    else ctx1.lineTo(60 + px, y);
+  }
+  ctx1.stroke();
+
+  ctx1.fillStyle = '#ccaa55';
+  ctx1.fillText('Cosine (bounded, smooth)', 60 + (w-100)*0.55, 70);
+}
+
+slider.addEventListener('input', () => {
+  maxT = parseInt(slider.value);
+  timeLabel.textContent = maxT;
+  drawLogVsCos();
+});
+drawLogVsCos();
+
+// ═══════════════════════════════════════════════════
+// GRAPH 2: exponential vs alternatives
+// ═══════════════════════════════════════════════════
+const ctx2 = document.getElementById('exp-vs-others').getContext('2d');
+const lambdaSlider = document.getElementById('lambda-slider');
+const alphaSlider = document.getElementById('alpha-slider');
+const lambdaLabel = document.getElementById('lambda-label');
+const alphaLabel = document.getElementById('alpha-label');
+let lamVal = 0.02, alphaVal = 0.3;
+
+function drawAlternatives() {
+  const w = 780, h = 300;
+  const maxT = 200;
+  ctx2.clearRect(0, 0, w, h);
+
+  // Grid
+  ctx2.strokeStyle = '#1e1e3a';
+  ctx2.lineWidth = 0.5;
+  for (let i = 0; i <= 10; i++) {
+    const x = 60 + (w - 100) * i / 10;
+    ctx2.beginPath(); ctx2.moveTo(x, 20); ctx2.lineTo(x, h - 40); ctx2.stroke();
+    ctx2.fillStyle = '#4a4a6a';
+    ctx2.font = '10px Inter, sans-serif';
+    ctx2.fillText((maxT * i / 10).toFixed(0), x - 12, 14);
+  }
+  for (let i = 0; i <= 5; i++) {
+    const y = 20 + (h - 60) * i / 5;
+    ctx2.beginPath(); ctx2.moveTo(60, y); ctx2.lineTo(w - 40, y); ctx2.stroke();
+    ctx2.fillStyle = '#4a4a6a';
+    ctx2.font = '10px Inter, sans-serif';
+    const val = (alphaVal * (1 - i/5)).toFixed(2);
+    ctx2.fillText(val, 28, y + 4);
+  }
+
+  // Axes
+  ctx2.strokeStyle = '#5a5a7a';
+  ctx2.lineWidth = 1;
+  ctx2.beginPath(); ctx2.moveTo(60, 20); ctx2.lineTo(60, h - 40); ctx2.stroke();
+  ctx2.beginPath(); ctx2.moveTo(60, h - 40); ctx2.lineTo(w - 40, h - 40); ctx2.stroke();
+
+  const scale = (h - 60) / alphaVal;
+
+  // Log (red)
+  ctx2.beginPath();
+  ctx2.strokeStyle = '#e55';
+  ctx2.lineWidth = 2.5;
+  let first = true;
+  const logAlpha = 0.05; // small so it doesn't blow up
+  for (let px = 0; px <= w - 100; px++) {
+    const t = maxT * px / (w - 100);
+    const y = h - 40 - Math.min(logAlpha * Math.log(1 + t), alphaVal) * scale;
+    if (first) { ctx2.moveTo(60 + px, y); first = false; }
+    else ctx2.lineTo(60 + px, y);
+  }
+  ctx2.stroke();
+
+  // Exponential (blue)
+  ctx2.beginPath();
+  ctx2.strokeStyle = '#5af';
+  ctx2.lineWidth = 3;
+  first = true;
+  for (let px = 0; px <= w - 100; px++) {
+    const t = maxT * px / (w - 100);
+    const y = h - 40 - alphaVal * (1 - Math.exp(-lamVal * t)) * scale;
+    if (first) { ctx2.moveTo(60 + px, y); first = false; }
+    else ctx2.lineTo(60 + px, y);
+  }
+  ctx2.stroke();
+
+  // Hyperbolic (orange)
+  const k = 1 / lamVal;
+  ctx2.beginPath();
+  ctx2.strokeStyle = '#fa5';
+  ctx2.lineWidth = 2;
+  first = true;
+  for (let px = 0; px <= w - 100; px++) {
+    const t = maxT * px / (w - 100);
+    const y = h - 40 - alphaVal * t / (k + t) * scale;
+    if (first) { ctx2.moveTo(60 + px, y); first = false; }
+    else ctx2.lineTo(60 + px, y);
+  }
+  ctx2.stroke();
+
+  // Tanh (green)
+  const beta = lamVal * 1.5;
+  ctx2.beginPath();
+  ctx2.strokeStyle = '#5f5';
+  ctx2.lineWidth = 1.5;
+  first = true;
+  for (let px = 0; px <= w - 100; px++) {
+    const t = maxT * px / (w - 100);
+    const y = h - 40 - alphaVal * Math.tanh(beta * t) * scale;
+    if (first) { ctx2.moveTo(60 + px, y); first = false; }
+    else ctx2.lineTo(60 + px, y);
+  }
+  ctx2.stroke();
+}
+
+lambdaSlider.addEventListener('input', () => {
+  lamVal = parseFloat(lambdaSlider.value);
+  lambdaLabel.textContent = lamVal.toFixed(3);
+  drawAlternatives();
+});
+alphaSlider.addEventListener('input', () => {
+  alphaVal = parseFloat(alphaSlider.value);
+  alphaLabel.textContent = alphaVal;
+  drawAlternatives();
+});
+drawAlternatives();
+
+// ═══════════════════════════════════════════════════
+// GRAPH 3: Echo demonstration
+// ═══════════════════════════════════════════════════
+const ctx3 = document.getElementById('echo-graph').getContext('2d');
+const w3 = 780, h3 = 280;
+
+ctx3.clearRect(0, 0, w3, h3);
+
+// Grid
+ctx3.strokeStyle = '#1e1e3a';
+ctx3.lineWidth = 0.5;
+for (let i = 0; i <= 10; i++) {
+  const x = 60 + (w3 - 100) * i / 10;
+  ctx3.beginPath(); ctx3.moveTo(x, 20); ctx3.lineTo(x, h3 - 40); ctx3.stroke();
+  ctx3.fillStyle = '#4a4a6a';
+  ctx3.font = '10px Inter, sans-serif';
+  const dtVal = (6 * i / 10).toFixed(1);
+  ctx3.fillText('Δt=' + dtVal, x - 16, 14);
+}
+for (let i = 0; i <= 5; i++) {
+  const y = 20 + (h3 - 60) * i / 5;
+  ctx3.beginPath(); ctx3.moveTo(60, y); ctx3.lineTo(w3 - 40, y); ctx3.stroke();
+  ctx3.fillStyle = '#4a4a6a';
+  ctx3.font = '10px Inter, sans-serif';
+  ctx3.fillText((1 - i*0.4).toFixed(1), 30, y + 4);
+}
+
+ctx3.strokeStyle = '#5a5a7a';
+ctx3.lineWidth = 1;
+ctx3.beginPath(); ctx3.moveTo(60, 20); ctx3.lineTo(60, h3 - 40); ctx3.stroke();
+ctx3.beginPath(); ctx3.moveTo(60, h3 - 40); ctx3.lineTo(w3 - 40, h3 - 40); ctx3.stroke();
+
+// Circular only
+const lamb = 0.8; // echoes at Δt = 2.5, 5.0
+const gamma = 0.7;
+ctx3.beginPath();
+ctx3.strokeStyle = '#ccaa55';
+ctx3.lineWidth = 3;
+let first = true;
+for (let px = 0; px <= w3 - 100; px++) {
+  const t = 6 * px / (w3 - 100);
+  const score = gamma + (1 - gamma) * Math.cos(lamb * Math.PI * t);
+  const y = h3 - 40 - (score + 0.2) * (h3 - 60) / 1.4;
+  if (first) { ctx3.moveTo(60 + px, y); first = false; }
+  else ctx3.lineTo(60 + px, y);
+}
+ctx3.stroke();
+
+// With log penalty
+ctx3.beginPath();
+ctx3.strokeStyle = '#e55';
+ctx3.lineWidth = 2;
+ctx3.setLineDash([6, 4]);
+first = true;
+for (let px = 0; px <= w3 - 100; px++) {
+  const t = 6 * px / (w3 - 100);
+  const score = gamma + (1 - gamma) * Math.cos(lamb * Math.PI * t) - 0.08 * Math.log(1 + t);
+  const y = h3 - 40 - (score + 0.45) * (h3 - 60) / 1.4;
+  if (first) { ctx3.moveTo(60 + px, y); first = false; }
+  else ctx3.lineTo(60 + px, y);
+}
+ctx3.stroke();
+ctx3.setLineDash([]);
+
+// Annotation arrows marking echoes
+for (const dt of [2.5, 5.0]) {
+  const px = 60 + (w3 - 100) * dt / 6;
+  ctx3.fillStyle = '#ccaa55';
+  ctx3.font = '10px Inter, sans-serif';
+  ctx3.fillText('↑ echo', px - 12, h3 - 35);
+}
+</script>
+
+</body>
+</html>
