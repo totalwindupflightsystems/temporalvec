@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What Temporal Circular Encoding Does and Does Not Do</title>
+<style>
+  :root {
+    --bg: #0a0a14; --surface: #12122a; --surface2: #1a1a35;
+    --text: #c8ccd8; --muted: #7a7d8a; --accent: #4a90d9;
+    --gold: #ccaa55; --red: #e55; --green: #5a5;
+    --border: #1e1e3a;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    max-width: 880px; margin: 0 auto; padding: 2rem 1.5rem; line-height: 1.65;
+  }
+  h1 { font-size: 1.8rem; color: var(--gold); margin-bottom: 0.2rem; }
+  h2 { font-size: 1.15rem; color: var(--accent); margin: 2.2rem 0 0.7rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 0.95rem; color: var(--text); margin: 1.3rem 0 0.4rem; }
+  .subtitle { color: var(--muted); font-size: 0.82rem; margin-bottom: 2rem; }
+
+  .box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.3rem; margin: 0.8rem 0;
+  }
+  .box.does { border-color: rgba(90,200,90,0.3); background: rgba(0,50,0,0.12); }
+  .box.doesnt { border-color: rgba(230,80,80,0.3); background: rgba(50,0,0,0.12); }
+  .box.warn { border-color: rgba(200,170,60,0.3); background: rgba(45,35,0,0.1); }
+  .box h3 { margin-top: 0; }
+
+  .formula {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.7rem 1rem; margin: 0.5rem 0;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.82rem; overflow-x: auto;
+  }
+  .formula .h { color: var(--accent); }
+  .formula .g { color: var(--green); }
+  .formula .r { color: var(--red); }
+
+  table {
+    width: 100%; border-collapse: collapse; margin: 0.7rem 0; font-size: 0.8rem;
+  }
+  th {
+    text-align: left; padding: 0.35rem 0.6rem; background: var(--surface2);
+    color: var(--gold); font-weight: 500; font-size: 0.68rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  td { padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--border); }
+  td.up { color: var(--green); }
+  td.warn-cell { color: #da5; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+  @media (max-width: 600px) { .two-col { grid-template-columns: 1fr; } }
+
+  .big-num { font-size: 2rem; font-weight: 700; color: var(--green); }
+  .big-num-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .flow {
+    display: flex; align-items: center; gap: 0.6rem; margin: 1rem 0;
+    flex-wrap: wrap; justify-content: center; font-size: 0.78rem;
+  }
+  .flow-box {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 0.4rem 0.7rem; text-align: center;
+  }
+  .flow-arrow { color: var(--muted); font-size: 1.1rem; }
+
+  .verdict {
+    background: rgba(204,170,85,0.1); border: 1px solid rgba(204,170,85,0.25);
+    border-radius: 6px; padding: 0.9rem 1.1rem; margin: 1.2rem 0; font-size: 0.88rem;
+  }
+  .verdict strong { color: var(--gold); }
+
+  .small { font-size: 0.72rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Temporal Circular Encoding</h1>
+<p class="subtitle">What the math actually does, what it doesn't, and whether it's enough.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- THE CORE IDEA -->
+<!-- ═══════════════════════════════════════ -->
+
+<h2>1. The Core Idea — In One Sentence</h2>
+
+<div class="box does">
+  <p>We append <strong>2 numbers per time scale</strong> to any existing embedding vector. Those numbers encode <em>when</em> the message happened. The database doesn't know they're time — it just sees a slightly longer vector. But the math guarantees that two messages close in time get a similarity boost, and two messages far apart get a penalty.</p>
+</div>
+
+<div class="formula">
+  <span class="h">Original embedding:</span> [0.02, -0.13, 0.07, ... 768 numbers total]<br>
+  <span class="h">Encoded:</span> [0.02, -0.13, 0.07, ... <span class="g">0.47, -0.88</span>, <span class="g">0.31, 0.95</span>]<br>
+  <span style="color:var(--muted)">↑ semantic (unchanged) ↑ wall time ↑ turn position</span>
+</div>
+
+<p style="font-size:0.8rem;color:var(--muted)">The extra dimensions are sin/cos pairs. cos(a−b) = cos(a)cos(b) + sin(a)sin(b) means the similarity between any two encoded vectors decomposes into semantic + temporal parts exactly.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- THE MATH -->
+<!-- ═══════════════════════════════════════ -->
+
+<h2>2. The Math — Why This Works</h2>
+
+<div class="formula">
+  <span class="h">cos_sim(q₁,q₂)</span> = <span class="h">γ·sem_sim</span> + <span class="g">γ_wall·cos(λ_wall·π·Δt_wall)</span> + <span class="g">γ_turn·cos(λ_turn·π·Δt_turn)</span>
+</div>
+
+<div class="box does">
+  <h3>Key properties</h3>
+  <p><strong>γ + γ_wall + γ_turn = 1 always.</strong> It's a convex combination. Semantic and temporal contributions split the total similarity budget. Tune β to increase γ_temporal (less semantic weight, more time sensitivity).</p>
+  <p><strong>Cosine is bounded in [-1, 1].</strong> At Δt=0 (same time), cos=1 → full temporal bonus. At Δt=1/(2λ), cos=0 → neutral. At Δt=1/λ, cos=−1 → maximum penalty.</p>
+  <p><strong>Single ANN pass.</strong> Encode once, search like normal. No re-rank, no second query, no post-processing. Time is in the vector.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- WHAT IT DOES -->
+<!-- ═══════════════════════════════════════ -->
+
+<h2>3. What It Does — Proven by Benchmark</h2>
+
+<div class="box does">
+  <h3>Real Reddit data — 1,412 messages, 60 threads</h3>
+  <table>
+    <tr><th>Configuration</th><th>Thread Precision@10</th><th>Turn Proximity</th><th>Wall Time Proximity</th></tr>
+    <tr><td>Raw semantic (baseline)</td><td>56.6%</td><td>—</td><td>—</td></tr>
+    <tr><td>semantic_heavy (γ=0.85)</td><td>63.6% <span class="up">+7.0</span></td><td class="up">+18%</td><td class="up">+66%</td></tr>
+    <tr><td>balanced (γ=0.71)</td><td>63.4% <span class="up">+6.8</span></td><td class="up">+37%</td><td class="up">+75%</td></tr>
+    <tr><td>time_heavy (γ=0.50)</td><td>63.9% <span class="up">+7.3</span></td><td class="up">+46%</td><td class="up">+79%</td></tr>
+    <tr><td><strong>time_only (γ=0.22)</strong></td><td><strong>71.8%</strong> <span class="up">+15.2</span></td><td class="warn-cell">−2%</td><td class="up">+88%</td></tr>
+    <tr><td>turns_only (γ=0.22)</td><td>67.0% <span class="up">+10.4</span></td><td class="warn-cell">−3%</td><td class="up">+79%</td></tr>
+  </table>
+  <p class="small" style="margin-top:0.4rem;">On Reddit, threads span days so wall time is the dominant signal. time_only hits 71.8% — 15 points above raw semantic — with zero changes to the embedding model.</p>
+</div>
+
+<div class="two-col">
+  <div class="box does" style="text-align:center;">
+    <div class="big-num">+15.2 pts</div>
+    <div class="big-num-label">Precision Gain</div>
+    <p class="small">More results from the right conversation</p>
+  </div>
+  <div class="box does" style="text-align:center;">
+    <div class="big-num">+88%</div>
+    <div class="big-num-label">Wall Time Closer</div>
+    <p class="small">Results cluster around query's time</p>
+  </div>
+</div>
+
+<div class="box does">
+  <h3>Across all three datasets</h3>
+  <table>
+    <tr><th>Dataset</th><th>Messages</th><th>Raw Precision</th><th>Best Precision</th><th>Gain</th><th>Best Config</th></tr>
+    <tr><td>DeepSeek synthetic</td><td>1,421</td><td>50.4%</td><td>61.0%</td><td class="up">+10.6</td><td>time_heavy</td></tr>
+    <tr><td>Reddit (small)</td><td>469</td><td>52.6%</td><td>67.8%</td><td class="up">+15.2</td><td>time_only</td></tr>
+    <tr><td>Reddit (large)</td><td>1,412</td><td>56.6%</td><td>71.8%</td><td class="up">+15.2</td><td>time_only</td></tr>
+  </table>
+  <p class="small" style="margin-top:0.4rem;">Consistent +10–15 point precision improvement. The effect is stronger on real data than synthetic.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- HOW IT COMPARES -->
+<!-- ═══════════════════════════════════════ -->
+
+<h2>4. How This Compares to Other Approaches</h2>
+
+<table>
+  <tr><th>Approach</th><th>Time IN index?</th><th>Single pass?</th><th>Bounded?</th><th>Math proven?</th><th>Built?</th></tr>
+  <tr><td>Post-hoc SQL re-rank</td><td>No</td><td>No (two-pass)</td><td>Yes</td><td>Trivial</td><td>Not yet</td></tr>
+  <tr><td style="color:var(--green)"><strong>Circular encoding ✓</strong></td><td style="color:var(--green)"><strong>Yes</strong></td><td style="color:var(--green)"><strong>Yes</strong></td><td style="color:var(--green)"><strong>Yes</strong></td><td style="color:var(--green)"><strong>Yes</strong></td><td style="color:var(--green)"><strong>Yes</strong></td></tr>
+  <tr><td>Hilbert curve index</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Partial</td><td>No</td></tr>
+  <tr><td>Hyperbolic (Poincaré)</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Established</td><td>No</td></tr>
+  <tr><td>Log-decay re-rank</td><td>No</td><td>No</td><td><span class="r">No (→∞)</span></td><td>N/A</td><td>Removed</td></tr>
+</table>
+
+<div class="verdict">
+  <strong>Circular encoding is the only approach that ticks all five boxes AND is built.</strong> Hilbert curves encode time into a 1D index (different mechanism, same goal). Hyperbolic embeddings capture conversation tree structure (the thing we DON'T do yet — see below). Log-decay was removed because it double-counts time and diverges to infinity.
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- WHAT IT DOES NOT DO -->
+<!-- ═══════════════════════════════════════ -->
+
+<h2>5. What It Does NOT Do — The Hard Boundaries</h2>
+
+<div class="box doesnt">
+  <h3>❌ Does not capture conversation tree structure</h3>
+  <p>It knows message 3 and message 4 are adjacent turns. It does <strong>not</strong> know that message 3 replied to message 1 and message 4 is a side thread branching from message 2. Turn position is a line, not a tree. If two messages are at the same turn depth in different branches, they look identical to the encoding even though one is on-topic and the other is a tangent.</p>
+  <p class="small">Fix: hyperbolic (Poincaré ball) embeddings. Conversation tree root at origin, replies move outward along geodesic, branching captured by hyperbolic volume. Proven in literature (Nickel & Kiela 2017). 1–2 weeks to prototype.</p>
+</div>
+
+<div class="box doesnt">
+  <h3>❌ Does not zero out semantic clones at distant times</h3>
+  <p>Two messages with identical meaning (sem_sim = 1.0) on opposite sides of the time window get a score of <strong>2γ − 1</strong>. With γ=0.5 (time_heavy): score = 0.0 (neutral). With γ=0.71 (balanced): score = 0.42 (still positive). Time can demote but never fully negate a perfect semantic match.</p>
+  <p class="small">Why: the decomposition is additive (γ·sem + γ_t·cos), not multiplicative (sem × cos). To fully zero out a perfect semantic match, you'd need the quaternion phase approach (Section 3 in five-approaches-math.md) — but that requires training and the peer review found the training objective doesn't actually produce multiplicative decomposition.</p>
+</div>
+
+<div class="box doesnt">
+  <h3>❌ Does not allow per-query temporal tuning</h3>
+  <p>γ and γᵢ are <strong>baked at insert time</strong>. You can't say "for this query, weight wall time at 80% and ignore turns." Every query gets the same temporal weighting as every insert.</p>
+  <p class="small">Workaround: maintain multiple indexes (time_heavy, turns_only, balanced) and route queries to the appropriate one. Not elegant, but functional.</p>
+</div>
+
+<div class="box doesnt">
+  <h3>❌ Not monotonic — cosine oscillates</h3>
+  <p>Cosine goes negative at Δt = 1/(2λ), but returns to +1 at Δt = 2/λ. Messages at Δt=0 and Δt=2/λ get identical temporal similarity. For λ=0.05, the first echo is at Δt=40 time units — safely beyond practical conversation spans. But strictly monotonic decay (older = always worse) requires a different function.</p>
+  <p class="small">The fix we killed: log-decay re-rank. It was monotonic but unbounded and double-counted time. Exponential saturation (α·(1−e^−λt)) would give monotonic decay while staying bounded, if needed.</p>
+</div>
+
+<div class="box doesnt">
+  <h3>❌ Breaks if timestamps are missing</h3>
+  <p>Every document must have a value for every temporal scale. If some documents have wall time but no turn position, you can't use both scales on those documents — the norm changes and the convex combination breaks. You'd need separate indexes per feature set.</p>
+</div>
+
+<div class="box doesnt">
+  <h3>❌ Not benchmarked on real ANN indexes (pgvector HNSW)</h3>
+  <p>All benchmarks use FAISS flat index (exact search). Real pgvector HNSW performance with 2–4 extra dimensions hasn't been measured. The added dimensions might slightly degrade ANN recall at very large scale (>1M vectors) — standard curse-of-dimensionality concern, untested.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- IS IT ENOUGH? -->
+<!-- ═══════════════════════════════════════ -->
+
+<h2>6. The Decision: Is This Enough?</h2>
+
+<div class="verdict">
+  <strong>The 80% case is handled.</strong> If your retrieval problem is "find messages about X near time Y," circular encoding is proven, bounded, single-pass, and delivers +10–15 points precision with zero model changes. You can ship this.
+</div>
+
+<div class="box warn">
+  <h3>The remaining 20% — what we'd gain by going further</h3>
+  <table>
+    <tr><th>Missing capability</th><th>What it unlocks</th><th>Effort</th><th>Approach</th></tr>
+    <tr><td>Conversation tree topology</td><td>"Find the reply chain that led to this message" — branch-aware retrieval</td><td>1–2 weeks</td><td>Hyperbolic (Poincaré ball)</td></tr>
+    <tr><td>Multiplicative time penalty</td><td>Semantic clones fully separated by time. "Same thing said 5 years ago" gets ~0.0</td><td>2–3 weeks</td><td>Quaternion phase (needs training)</td></tr>
+    <tr><td>Monotonic decay</td><td>Strict recency: older = always worse, no cosine echoes</td><td>1 day</td><td>Exponential saturation penalty</td></tr>
+    <tr><td>Per-query tuning</td><td>"This query: 80% wall time. Next query: 80% turns."</td><td>1–2 days</td><td>Multiple indexes + routing</td></tr>
+    <tr><td>pgvector HNSW benchmark</td><td>Confidence the encoding works at production scale</td><td>1 day</td><td>DexDat integration</td></tr>
+  </table>
+</div>
+
+<div class="verdict">
+  <strong>My recommendation:</strong> Ship circular encoding now — it's the 80% case, mathematically proven, empirically verified, and zero-risk (pure numpy, no training, no infra change). The missing tree topology is the most interesting next step because it unlocks branch-aware retrieval, which is genuinely new capability vs. "messages near in time." But it's a 1–2 week research project, not a bugfix.
+</div>
+
+<p class="small" style="margin-top:2.5rem;">
+  Full peer review: ~/Kobayashi-Maru/docs/design-review/temporal-encoding-penalty-review.md<br>
+  Package: github.com/totalwindupflightsystems/temporalvec<br>
+  Five approaches math: ~/.hermes/skills/data-science/temporal-vector-index/references/five-approaches-math.md
+</p>
+
+</body>
+</html>
