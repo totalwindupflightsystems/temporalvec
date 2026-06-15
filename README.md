@@ -44,7 +44,19 @@ cos_sim(q₁,q₂) = γ·sem_sim + Σᵢ γᵢ·cos(λᵢπ·|tᵢ₁ - tᵢ₂|
 where γ = α²/(α²+Σβᵢ²), γᵢ = βᵢ²/(α²+Σβᵢ²), γ + Σγᵢ = 1
 ```
 
+This is a **convex combination** — γ + Σγᵢ = 1 always. Score is bounded in [-1, 1]. Cosine handles time smoothly — bounded, tunable via λ, no separate penalty function fighting it.
+
 Vectors stay L2-normalized because v̂ is unit and sin²+cos²=1.
+
+## Design Principle
+
+**One mechanism for time.** The circular encoding's cosine decomposition handles temporal weighting on its own. No hybrid re-rank, no log penalty, no double-counting. Time is encoded into the vector space — search is a single ANN pass.
+
+Why no separate penalty function?
+- Cosine is bounded [-1,1]; log penalties diverge to -∞
+- Two mechanisms controlling the same variable = double-counting = impossible to tune
+- The "echo problem" the penalty was designed to fix doesn't exist at sane λ values
+- Convex combination γ+Σγᵢ=1 is mathematically elegant and interpretable
 
 ## Presets
 
@@ -56,37 +68,21 @@ Vectors stay L2-normalized because v̂ is unit and sin²+cos²=1.
 | `turns_only` | 0.22 | Pure conversational indexing |
 | `time_only` | 0.22 | Pure temporal indexing |
 
-## Two Modes
-
-### Mode A: Circular-only (single-pass ANN)
-Store encoded vectors. One ANN pass, done. Time weighted at insert time.
-
-### Mode B: Hybrid (production)
-Store raw embeddings + timestamps. ANN → log-decay re-rank. Per-query temporal tuning, no cos echoes.
-
-```python
-from temporalvec import hybrid_score
-
-# Score = cosine_sim - α_wall·log(1+|Δt_wall|) - α_turn·log(1+|Δt_turn|)
-score = hybrid_score(sem_sim=0.85, dt_wall=3600.0, dt_turn=5.0)
-```
-
 ## Package Structure
 
 ```
 temporalvec/
 ├── temporalvec/
 │   ├── __init__.py     # Public API
-│   ├── encode.py       # Circular encoding + math
-│   └── hybrid.py       # Log-decay re-rank scoring
+│   └── encode.py       # Circular encoding + math
 ├── benchmarks/
 │   ├── run.py          # FAISS-backed benchmark runner
 │   └── datasets.py     # Synthetic conversation generator
 ├── tests/
-│   ├── test_encode.py  # Exact decomposition verification (21 tests)
-│   └── test_hybrid.py  # Re-rank scoring tests (10 tests)
+│   └── test_encode.py  # Exact decomposition verification (21 tests)
 ├── paper/
-│   └── figures/        # Whitepaper figures (TBD)
+│   ├── figures/        # Whitepaper figures (TBD)
+│   └── temporal-encoding-explainer.html  # Interactive visual explainer
 ├── pyproject.toml
 └── README.md
 ```
@@ -94,9 +90,10 @@ temporalvec/
 ## Status
 
 - ✅ Math proven (exact decomposition, zero approximation error)
-- ✅ 31 tests pass (zero-dependency deterministic verification)
+- ✅ 21 tests pass (zero-dependency deterministic verification)
 - ✅ FAISS benchmark harness
 - ✅ Configurable presets + multi-scale encoding
+- ✅ Peer-reviewed by GPT-5.5 (penalty function analysis, hybrid rejected)
 - ⬜ Whitepaper (LaTeX)
 - ⬜ Real-dataset benchmarks
 - ⬜ Go implementation for DexDat

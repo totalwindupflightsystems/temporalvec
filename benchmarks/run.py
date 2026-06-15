@@ -27,8 +27,6 @@ from temporalvec import (
     TemporalScale,
     encode,
     encode_batch,
-    hybrid_rerank,
-    ReRankConfig,
     predict_similarity,
     cosine_sim,
     l2_normalize,
@@ -180,40 +178,7 @@ def run_benchmark(
 
         results[f"circular_{name}"] = aggregate_metrics(config_metrics)
 
-    # ── 3. Hybrid log re-rank ────────────────────────────────────────────────
-    hybrid_configs = [
-        ("log_balanced", ReRankConfig.preset("balanced")),
-        ("log_turn_heavy", ReRankConfig.preset("turn_heavy")),
-        ("log_time_heavy", ReRankConfig.preset("time_heavy")),
-    ]
-
-    for name, rcfg in hybrid_configs:
-        hybrid_metrics = []
-        for qi in query_indices:
-            # First pass: ANN on raw semantic
-            query_vec = sem_norm[qi].astype(np.float32)
-            distances, indices = faiss_search(raw_index, query_vec, 100)
-            candidate_indices = np.array([i for i in indices[0] if i != qi])
-
-            # Build candidate tuples for re-rank
-            candidates = []
-            for ci in candidate_indices:
-                sem_sim = float(distances[0][list(indices[0]).index(ci)])
-                dt_wall = abs(wall_times[ci] - wall_times[qi])
-                dt_turn = abs(turn_values[ci] - turn_values[qi])
-                candidates.append((int(ci), sem_sim, dt_wall, dt_turn))
-
-            ranked = hybrid_rerank(candidates, rcfg)
-            hit_indices = np.array([cid for cid, _ in ranked[:k]])
-
-            metrics = compute_metrics(
-                hit_indices, topic_ids, wall_times, turn_values, qi
-            )
-            hybrid_metrics.append(metrics)
-
-        results[f"hybrid_{name}"] = aggregate_metrics(hybrid_metrics)
-
-    # ── 4. Add deltas vs raw baseline ────────────────────────────────────────
+    # ── 3. Add deltas vs raw baseline ────────────────────────────────────────
     raw = results["raw_semantic"]
     for name in list(results.keys()):
         if name == "raw_semantic":
@@ -268,15 +233,6 @@ def print_results(results: Dict, k: int = 10, wall_scale: float = 1.0):
         print(f"  {name:<24s} {r[f'pre@{k}']:8.1%} {r['mean_turn_dt']:8.3f} {fmt_delta(r['vs_raw_turn']):>8s} {r['mean_wall_dt']*wall_scale:8.0f}s {fmt_delta(r['vs_raw_wall']):>8s}")
 
     print()
-
-    # Hybrid
-    print(f"  {'Hybrid Log Re-rank':}")
-    for name in ["log_balanced", "log_turn_heavy", "log_time_heavy"]:
-        key = f"hybrid_{name}"
-        if key not in results:
-            continue
-        r = results[key]
-        print(f"  {name:<24s} {r[f'pre@{k}']:8.1%} {r['mean_turn_dt']:8.3f} {'--':>8s} {r['mean_wall_dt']*wall_scale:8.0f}s {'--':>8s}")
 
     print()
 

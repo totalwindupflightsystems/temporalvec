@@ -21,12 +21,6 @@ from .encode import (
     l2_normalize,
     cosine_sim,
 )
-from .hybrid import (
-    ReRankConfig,
-    log_decay,
-    hybrid_score,
-    hybrid_rerank,
-)
 
 __version__ = "0.1.0"
 __all__ = [
@@ -39,7 +33,4 @@ __all__ = [
     "l2_norm",
     "l2_normalize",
     "cosine_sim",
-    "log_decay",
-    "hybrid_score",
-    "hybrid_rerank",
 ]
